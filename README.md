@@ -13,7 +13,7 @@ No build step, no dependencies, no account. Everything is stored on your phone.
 - **Units per drink** – each quick-add preset carries its own units value. Edit, add or remove presets in Settings, with a built-in calculator (units = ABV% × ml ÷ 1000).
 - **Weekly target** – defaults to the UK guideline of 14 units, shown as a progress bar on the home screen and a dashed line on the weekly and monthly charts. Set to 0 to hide it.
 - **Day cutoff** – drinks logged before 04:00 (configurable) count towards the previous evening.
-- **Charts** – stacked bars by drink type for the last 28 days, 12 weeks or 12 months, with paging further back, tap-to-see breakdowns, summary stats and a table view.
+- **Charts** – stacked bars by drink type for the last 28 days, 12 weeks or 12 months, with paging further back, tap-to-see breakdowns, summary stats and a table view. Switch between units and estimated calories (about 56 kcal per unit plus an allowance for sugars and carbs by drink type).
 - **History** – every drink grouped by day; tap to edit or delete.
 - **Backup** – export JSON (full backup, re-importable) or CSV; import merges or replaces.
 - **Installable** – a Progressive Web App with an offline service worker. Light and dark mode follow the phone, or set in Settings.

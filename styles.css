@@ -225,6 +225,8 @@ p { margin: 0; }
 .segmented button {
   flex: 1; min-height: 38px; border: 0; border-radius: 10px; background: transparent; color: var(--ink-2); font-weight: 600; font-size: 14px;
 }
+.segmented.sm { padding: 2px; flex: 0 0 auto; }
+.segmented.sm button { min-height: 30px; padding: 0 12px; font-size: 13px; }
 .segmented button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
 
 /* ---------- Lists ---------- */
@@ -368,6 +370,7 @@ input[type="file"] { display: none; }
 .pager .btn { min-width: 44px; }
 
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.stats.four { grid-template-columns: 1fr 1fr; }
 .stat { background: var(--surface-2); border-radius: 10px; padding: 10px 10px; display: flex; flex-direction: column; gap: 2px; }
 .stat .s-label { font-size: 12px; color: var(--ink-2); }
 .stat .s-value { font-size: 20px; font-weight: 650; }

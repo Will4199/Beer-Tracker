@@ -238,7 +238,7 @@
   const view = $('#view');
   const routes = { log: renderLog, history: renderHistory, charts: renderCharts, settings: renderSettings, beers: renderBeers };
   const tabFor = { beers: 'settings' };
-  let chartState = { period: 'weekly', offset: 0, selected: null, table: false };
+  let chartState = { period: 'weekly', offset: 0, selected: null, table: false, measure: 'units' };
 
   function currentTab() { const hsh = location.hash.replace('#', ''); return routes[hsh] ? hsh : 'log'; }
   function render() {
@@ -520,6 +520,17 @@
   }
 
   // --- Charts ---
+  // ---------- Calories (estimate) ----------
+  // About 56 kcal per UK unit of alcohol (10ml ethanol), plus an allowance per 100ml for sugars and carbs by drink type.
+  const KCAL_PER_UNIT = 56;
+  const KCAL_PER_ML = { beer: 0.10, red_wine: 0.10, prosecco: 0.07, other: 0 };
+  function kcalFor(e) {
+    const ml = e.ml || parseMl(e.size) || 0;
+    return e.units * KCAL_PER_UNIT + ml * (KCAL_PER_ML[e.type] || 0);
+  }
+  function fmtKcal(n) { return Math.round(n).toLocaleString('en-GB'); }
+  function fmtAxis(n, measure) { return measure === 'kcal' && n >= 1000 ? (n / 1000).toFixed(n % 1000 ? 1 : 0) + 'k' : String(n); }
+
   function buildPeriods(period, offset) {
     const today = todayEff();
     const periods = [];
@@ -545,19 +556,24 @@
     for (const p of periods) {
       const list = entriesBetween(p.start, p.end);
       p.byType = byType(list); p.total = sumUnits(list); p.count = list.length;
+      p.kcalByType = {}; TYPE_ORDER.forEach(t => p.kcalByType[t] = 0);
+      list.forEach(e => p.kcalByType[e.type] += kcalFor(e));
+      p.kcal = list.reduce((a, e) => a + kcalFor(e), 0);
       p.future = p.start > today;
     }
     return periods;
   }
 
   function renderCharts() {
-    const { period, offset } = chartState;
+    const { period, offset, measure } = chartState;
+    const isKcal = measure === 'kcal';
     const periods = buildPeriods(period, offset);
     const target = state.settings.weeklyTarget;
     const past = periods.filter(p => !p.future);
-    const total = sumUnits(past.map(p => ({ units: p.total })));
-    const avg = past.length ? total / past.length : 0;
-    const peak = past.reduce((m, p) => Math.max(m, p.total), 0);
+    const total = past.reduce((a, p) => a + p.total, 0);
+    const totalKcal = past.reduce((a, p) => a + p.kcal, 0);
+    const avg = past.length ? (isKcal ? totalKcal : total) / past.length : 0;
+    const peak = past.reduce((m, p) => Math.max(m, isKcal ? p.kcal : p.total), 0);
     let third;
     if (period === 'daily') {
       const free = past.filter(p => p.total === 0).length;
@@ -574,69 +590,81 @@
       ? `${fmtMonth.format(periods[0].start)} – ${fmtMonth.format(last.start)}`
       : `${fmtDM.format(periods[0].start)} – ${fmtDM.format(addDays(last.end, -1))}`;
     const perName = period === 'daily' ? 'day' : period === 'weekly' ? 'week' : 'month';
+    const showTypes = TYPE_ORDER.filter(t => t !== 'other' || periods.some(p => p.byType.other > 0));
+    const fmt = isKcal ? fmtKcal : fmtUnits;
+    const unitWord = isKcal ? 'kcal' : 'units';
 
     const seg = h('div', { class: 'segmented', role: 'group', 'aria-label': 'Chart period' },
       ['daily', 'weekly', 'monthly'].map(p => h('button', { type: 'button', 'aria-pressed': String(p === period), onclick: () => { chartState.period = p; chartState.offset = 0; chartState.selected = null; render(); } }, p[0].toUpperCase() + p.slice(1))));
+    const measureSeg = h('div', { class: 'segmented sm', role: 'group', 'aria-label': 'Chart measure' },
+      [['units', 'Units'], ['kcal', 'Calories']].map(([v, l]) => h('button', { type: 'button', 'aria-pressed': String(v === measure), onclick: () => { chartState.measure = v; render(); } }, l)));
 
     const chartWrap = h('div', { class: 'chart-wrap' });
     const legend = h('div', { class: 'legend', 'aria-label': 'Legend' },
-      TYPE_ORDER.filter(t => t !== 'other' || periods.some(p => p.byType.other > 0)).map(t =>
-        h('span', { class: 'key' }, h('span', { class: 'sw', style: `--series: var(--s-${t})` }), TYPES[t].label)));
+      showTypes.map(t => h('span', { class: 'key' }, h('span', { class: 'sw', style: `--series: var(--s-${t})` }), TYPES[t].label)));
 
     const tableWrap = h('details', { open: chartState.table || null, ontoggle: (ev) => { chartState.table = ev.target.open; } },
       h('summary', null, 'Show as table'),
       h('table', { class: 'data' },
         h('thead', null, h('tr', null, h('th', null, period === 'daily' ? 'Day' : period === 'weekly' ? 'Week' : 'Month'),
-          TYPE_ORDER.filter(t => t !== 'other' || periods.some(p => p.byType.other > 0)).map(t => h('th', null, TYPES[t].label)), h('th', null, 'Total'))),
+          showTypes.map(t => h('th', null, TYPES[t].label)), h('th', null, isKcal ? 'kcal' : 'Units'), h('th', null, isKcal ? 'Units' : 'kcal'))),
         h('tbody', null, periods.slice().reverse().filter(p => !p.future).map(p => h('tr', null, h('td', null, p.label),
-          TYPE_ORDER.filter(t => t !== 'other' || periods.some(q => q.byType.other > 0)).map(t => h('td', null, p.byType[t] ? fmtUnits(p.byType[t]) : '–')),
-          h('td', null, h('strong', null, fmtUnits(p.total))))))));
+          showTypes.map(t => h('td', null, (isKcal ? p.kcalByType[t] : p.byType[t]) ? fmt(isKcal ? p.kcalByType[t] : p.byType[t]) : '–')),
+          h('td', null, h('strong', null, fmt(isKcal ? p.kcal : p.total))),
+          h('td', { class: 'muted' }, isKcal ? fmtUnits(p.total) : fmtKcal(p.kcal)))))));
 
     const out = h('div', { class: 'stack' },
       h('div', { class: 'view-header' }, h('h1', null, 'Charts')),
       seg,
       h('section', { class: 'card stack' },
         h('div', { class: 'chart-title' },
-          h('h2', null, `Units per ${perName}`),
+          h('h2', null, `${isKcal ? 'Calories' : 'Units'} per ${perName}`),
           h('div', { class: 'pager' },
             h('button', { class: 'btn sm', type: 'button', 'aria-label': 'Earlier', onclick: () => { chartState.offset++; chartState.selected = null; render(); } }, '‹'),
             h('button', { class: 'btn sm', type: 'button', 'aria-label': 'Later', disabled: offset === 0, onclick: () => { chartState.offset = Math.max(0, offset - 1); chartState.selected = null; render(); } }, '›'))),
-        h('div', { class: 'range small muted' }, rangeText),
+        h('div', { class: 'row between' }, h('div', { class: 'range small muted' }, rangeText), measureSeg),
         chartWrap, legend,
-        h('div', { class: 'stats' },
-          h('div', { class: 'stat' }, h('span', { class: 's-label' }, 'Total'), h('span', { class: 's-value' }, fmtUnits(total), h('small', null, 'units'))),
-          h('div', { class: 'stat' }, h('span', { class: 's-label' }, `Average / ${perName}`), h('span', { class: 's-value' }, fmtUnits(avg), h('small', null, 'units'))),
+        h('div', { class: 'stats four' },
+          h('div', { class: 'stat' }, h('span', { class: 's-label' }, 'Total units'), h('span', { class: 's-value' }, fmtUnits(total), h('small', null, 'units'))),
+          h('div', { class: 'stat' }, h('span', { class: 's-label' }, 'Calories'), h('span', { class: 's-value' }, fmtKcal(totalKcal), h('small', null, 'kcal'))),
+          h('div', { class: 'stat' }, h('span', { class: 's-label' }, `Average / ${perName}`), h('span', { class: 's-value' }, fmt(avg), h('small', null, unitWord))),
           h('div', { class: 'stat' }, h('span', { class: 's-label' }, third.label), h('span', { class: 's-value' }, third.value, h('small', null, third.unit)))),
-        period !== 'daily' && target > 0 ? h('p', { class: 'small muted' }, `Dashed line: ${period === 'weekly' ? `weekly target of ${fmtUnits(target)} units` : `monthly equivalent of your ${fmtUnits(target)}-unit weekly target`}.`) : null,
-        h('p', { class: 'small muted' }, 'Peak ' + perName + ': ' + fmtUnits(peak) + ' units. Tap a bar for the breakdown.'),
+        !isKcal && period !== 'daily' && target > 0 ? h('p', { class: 'small muted' }, `Dashed line: ${period === 'weekly' ? `weekly target of ${fmtUnits(target)} units` : `monthly equivalent of your ${fmtUnits(target)}-unit weekly target`}.`) : null,
+        h('p', { class: 'small muted' }, `Peak ${perName}: ${fmt(peak)} ${unitWord}. Tap a bar for the breakdown.`),
+        h('p', { class: 'small muted' }, `Calories are an estimate: about ${KCAL_PER_UNIT} kcal per unit of alcohol plus an allowance for sugars and carbs by drink type. A pint of 4.5% lager is roughly ${fmtKcal(kcalFor({ type: 'beer', units: unitsFor(4.5, 568), ml: 568 }))} kcal and a 175ml glass of red about ${fmtKcal(kcalFor({ type: 'red_wine', units: 2.4, ml: 175 }))}.`),
         tableWrap));
 
     // Draw once mounted so we know the width.
-    requestAnimationFrame(() => drawChart(chartWrap, periods, period, target));
-    let resizeTimer; window.onresize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (currentTab() === 'charts' && chartWrap.isConnected) drawChart(chartWrap, periods, period, target); }, 120); };
+    requestAnimationFrame(() => drawChart(chartWrap, periods, period, target, measure));
+    let resizeTimer; window.onresize = () => { clearTimeout(resizeTimer); resizeTimer = setTimeout(() => { if (currentTab() === 'charts' && chartWrap.isConnected) drawChart(chartWrap, periods, period, target, measure); }, 120); };
     return out;
   }
 
-  function drawChart(wrap, periods, period, target) {
+  function drawChart(wrap, periods, period, target, measure) {
     wrap.innerHTML = '';
+    const isKcal = measure === 'kcal';
+    const val = p => isKcal ? p.kcal : p.total;
+    const segVal = (p, t) => isKcal ? p.kcalByType[t] : p.byType[t];
+    const fmt = isKcal ? fmtKcal : fmtUnits;
     const W = Math.max(280, wrap.clientWidth || 320), H = 220;
-    const m = { top: 18, right: 8, bottom: 26, left: 30 };
+    const m = { top: 18, right: 8, bottom: 26, left: isKcal ? 36 : 30 };
     const iw = W - m.left - m.right, ih = H - m.top - m.bottom;
     const n = periods.length;
     const slot = iw / n;
     const barW = Math.min(24, Math.max(6, slot - 4));
-    const targetVal = period === 'weekly' ? target : period === 'monthly' ? target * 365.25 / 12 / 7 : 0;
-    const maxData = Math.max(...periods.map(p => p.total), targetVal > 0 ? targetVal * 1.05 : 0, 1);
+    const targetVal = isKcal ? 0 : period === 'weekly' ? target : period === 'monthly' ? target * 365.25 / 12 / 7 : 0;
+    const maxData = Math.max(...periods.map(val), targetVal > 0 ? targetVal * 1.05 : 0, isKcal ? 100 : 1);
     const yMax = niceMax(maxData);
     const y = v => m.top + ih - (v / yMax) * ih;
     const types = TYPE_ORDER;
+    const perName = period === 'daily' ? 'day' : period === 'weekly' ? 'week' : 'month';
 
-    const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'img', 'aria-label': `Stacked bar chart of alcohol units per ${period === 'daily' ? 'day' : period === 'weekly' ? 'week' : 'month'}` });
+    const svg = s('svg', { viewBox: `0 0 ${W} ${H}`, width: W, height: H, role: 'img', 'aria-label': `Stacked bar chart of ${isKcal ? 'estimated calories' : 'alcohol units'} per ${perName}` });
     const axis = s('g', { class: 'axis' });
     const ticks = niceTicks(yMax);
     ticks.forEach(t => {
       axis.appendChild(s('line', { x1: m.left, x2: W - m.right, y1: y(t), y2: y(t), class: t === 0 ? 'baseline' : '' }));
-      axis.appendChild(s('text', { x: m.left - 6, y: y(t) + 4, 'text-anchor': 'end' }, String(t)));
+      axis.appendChild(s('text', { x: m.left - 6, y: y(t) + 4, 'text-anchor': 'end' }, fmtAxis(t, measure)));
     });
     svg.appendChild(axis);
 
@@ -645,25 +673,24 @@
       const cx = m.left + slot * i + slot / 2;
       const x0 = cx - barW / 2;
       const g = s('g', { class: 'bar-group' + (chartState.selected === p.key ? ' selected' : ''), tabindex: p.future ? null : 0, role: p.future ? null : 'button',
-        'aria-label': `${p.label}: ${fmtUnits(p.total)} units` });
+        'aria-label': `${p.label}: ${fmtUnits(p.total)} units, about ${fmtKcal(p.kcal)} kcal` });
       let acc = 0; let drawnSegs = 0;
-      const segs = types.filter(t => p.byType[t] > 0);
+      const segs = types.filter(t => segVal(p, t) > 0);
       segs.forEach((t, si) => {
-        const v = p.byType[t];
+        const v = segVal(p, t);
         const yTop = y(acc + v), yBot = y(acc);
         const isTop = si === segs.length - 1;
         let hgt = yBot - yTop; if (drawnSegs > 0) hgt -= 2; // 2px surface gap between segments
-        const yy = isTop ? yTop : yTop;
         const rect = isTop && hgt > 4
-          ? s('path', { class: 'seg', d: roundedTop(x0, yy, barW, Math.max(0, hgt), 4), fill: `var(--s-${t})` })
-          : s('rect', { class: 'seg', x: x0, y: yy, width: barW, height: Math.max(0, hgt), fill: `var(--s-${t})` });
+          ? s('path', { class: 'seg', d: roundedTop(x0, yTop, barW, Math.max(0, hgt), 4), fill: `var(--s-${t})` })
+          : s('rect', { class: 'seg', x: x0, y: yTop, width: barW, height: Math.max(0, hgt), fill: `var(--s-${t})` });
         g.appendChild(rect); acc += v; drawnSegs++;
       });
-      if (p.total === 0 && !p.future) g.appendChild(s('rect', { x: x0, y: y(0) - 2, width: barW, height: 2, fill: 'var(--grid)' }));
+      if (val(p) === 0 && !p.future) g.appendChild(s('rect', { x: x0, y: y(0) - 2, width: barW, height: 2, fill: 'var(--grid)' }));
       // hit target spans the whole slot
       g.appendChild(s('rect', { class: 'bar-hit', x: m.left + slot * i, y: m.top, width: slot, height: ih }));
       if (!p.future) {
-        const show = () => showTooltip(wrap, svg, p, cx, y(p.total), W);
+        const show = () => showTooltip(wrap, svg, p, cx, y(val(p)), W, measure);
         g.addEventListener('click', (ev) => { ev.stopPropagation(); chartState.selected = chartState.selected === p.key ? null : p.key; svg.querySelectorAll('.bar-group').forEach(b => b.classList.remove('selected')); if (chartState.selected) { g.classList.add('selected'); show(); } else hideTooltip(wrap); });
         g.addEventListener('focus', () => { show(); });
         g.addEventListener('blur', () => { if (chartState.selected !== p.key) hideTooltip(wrap); });
@@ -674,11 +701,11 @@
     svg.appendChild(bars);
 
     // Peak label (one direct label, not every bar)
-    const past = periods.filter(p => !p.future && p.total > 0);
+    const past = periods.filter(p => !p.future && val(p) > 0);
     if (past.length) {
-      const peak = past.reduce((a, b) => (b.total > a.total ? b : a));
+      const peak = past.reduce((a, b) => (val(b) > val(a) ? b : a));
       const i = periods.indexOf(peak);
-      svg.appendChild(s('text', { class: 'value-label', x: m.left + slot * i + slot / 2, y: y(peak.total) - 5, 'text-anchor': 'middle' }, fmtUnits(peak.total)));
+      svg.appendChild(s('text', { class: 'value-label', x: m.left + slot * i + slot / 2, y: y(val(peak)) - 5, 'text-anchor': 'middle' }, fmt(val(peak))));
     }
 
     if (targetVal > 0) {
@@ -687,7 +714,7 @@
     }
     svg.addEventListener('click', () => { chartState.selected = null; svg.querySelectorAll('.bar-group').forEach(b => b.classList.remove('selected')); hideTooltip(wrap); });
     wrap.appendChild(svg);
-    if (chartState.selected) { const p = periods.find(q => q.key === chartState.selected); if (p) { const i = periods.indexOf(p); showTooltip(wrap, svg, p, m.left + slot * i + slot / 2, y(p.total), W); } }
+    if (chartState.selected) { const p = periods.find(q => q.key === chartState.selected); if (p) { const i = periods.indexOf(p); showTooltip(wrap, svg, p, m.left + slot * i + slot / 2, y(val(p)), W, measure); } }
   }
   function roundedTop(x, y, w, hgt, r) {
     r = Math.min(r, w / 2, hgt);
@@ -704,12 +731,15 @@
     const step = max <= 5 ? 1 : max <= 10 ? 2 : max <= 25 ? 5 : max <= 50 ? 10 : max <= 100 ? 20 : max / 5;
     const out = []; for (let t = 0; t <= max + 1e-9; t += step) out.push(round1(t)); return out;
   }
-  function showTooltip(wrap, svg, p, cx, cy, W) {
+  function showTooltip(wrap, svg, p, cx, cy, W, measure) {
     hideTooltip(wrap);
+    const isKcal = measure === 'kcal';
     const tip = h('div', { class: 'tooltip' },
       h('div', { class: 't-title' }, p.label),
-      TYPE_ORDER.filter(t => p.byType[t] > 0).map(t => h('div', { class: 't-row' }, h('span', null, TYPES[t].label), h('span', null, fmtUnits(p.byType[t])))),
-      h('div', { class: 't-row total' }, h('span', null, `${p.count} drink${p.count === 1 ? '' : 's'}`), h('span', null, fmtUnits(p.total), ' units')));
+      TYPE_ORDER.filter(t => p.byType[t] > 0).map(t => h('div', { class: 't-row' }, h('span', null, TYPES[t].label),
+        h('span', null, isKcal ? `${fmtKcal(p.kcalByType[t])} kcal` : `${fmtUnits(p.byType[t])} u`))),
+      h('div', { class: 't-row total' }, h('span', null, `${p.count} drink${p.count === 1 ? '' : 's'}`), h('span', null, fmtUnits(p.total), ' units')),
+      h('div', { class: 't-row' }, h('span', null, 'Calories'), h('span', null, `≈ ${fmtKcal(p.kcal)} kcal`)));
     wrap.appendChild(tip);
     const scale = wrap.clientWidth / W;
     const tw = tip.offsetWidth;
