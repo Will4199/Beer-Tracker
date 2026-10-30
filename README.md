@@ -6,7 +6,9 @@ No build step, no dependencies, no account. Everything is stored on your phone.
 
 ## Features
 
-- **Quick add** – one tap for a standard can (440ml), pint can (568ml), glass of red wine (175ml) or Prosecco flute (125ml). Undo from the toast if you mis-tap.
+- **Quick add** – one tap for a standard can (440ml), pint (568ml), glass of red wine (175ml) or Prosecco flute (125ml). Undo from the toast if you mis-tap.
+- **Beer type** – choose which beer you are drinking (or leave it as Generic beer) and the can and pint units adjust to that beer's ABV. A Beers reference page lists common UK beers with editable strengths, and you can add your own.
+- **Drink-free days** – the home screen counts consecutive drink-free days, congratulates you at milestones and shows drink-free days this week. History marks gaps between drinking days.
 - **Other time** – log a drink for an earlier time or date, several at once, or a custom drink.
 - **Units per drink** – each quick-add preset carries its own units value. Edit, add or remove presets in Settings, with a built-in calculator (units = ABV% × ml ÷ 1000).
 - **Weekly target** – defaults to the UK guideline of 14 units, shown as a progress bar on the home screen and a dashed line on the weekly and monthly charts. Set to 0 to hide it.
@@ -42,11 +44,11 @@ then open `http://localhost:8000/`.
 | Drink | Size | Assumed ABV | Units |
 |---|---|---|---|
 | Beer, standard can | 440ml | 4.5% | 2.0 |
-| Beer, pint can | 568ml | 4.5% | 2.6 |
+| Beer, pint | 568ml | 4.5% | 2.6 |
 | Red wine, glass | 175ml | 13.5% | 2.4 |
 | Prosecco, flute | 125ml | 11% | 1.4 |
 
-Adjust these in Settings to match what you actually drink.
+Adjust these in Settings to match what you actually drink. Beer units follow the selected beer's ABV; the figures above are for Generic beer.
 
 ## Files
 

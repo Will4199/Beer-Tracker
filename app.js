@@ -14,13 +14,35 @@
   const TYPE_ORDER = ['beer', 'red_wine', 'prosecco', 'other'];
 
   const DEFAULT_PRESETS = [
-    { id: 'p-beer-can',  type: 'beer',     name: 'Standard can', size: '440ml', units: 2.0 },
-    { id: 'p-beer-pint', type: 'beer',     name: 'Pint can',     size: '568ml', units: 2.6 },
-    { id: 'p-wine-175',  type: 'red_wine', name: 'Glass',        size: '175ml', units: 2.4 },
-    { id: 'p-pros-125',  type: 'prosecco', name: 'Flute',        size: '125ml', units: 1.4 },
+    { id: 'p-beer-can',  type: 'beer',     name: 'Standard can', size: '440ml', ml: 440, units: 2.0 },
+    { id: 'p-beer-pint', type: 'beer',     name: 'Pint',         size: '568ml', ml: 568, units: 2.6 },
+    { id: 'p-wine-175',  type: 'red_wine', name: 'Glass',        size: '175ml', ml: 175, units: 2.4 },
+    { id: 'p-pros-125',  type: 'prosecco', name: 'Flute',        size: '125ml', ml: 125, units: 1.4 },
   ];
 
-  const DEFAULT_SETTINGS = { weeklyTarget: 14, cutoffHour: 4, presets: DEFAULT_PRESETS };
+  // Reference beers. ABVs are typical UK can/bottle figures and are editable in the app.
+  const GENERIC_BEER_ID = 'generic';
+  const DEFAULT_BEERS = [
+    { id: GENERIC_BEER_ID, name: 'Generic beer', abv: 4.5 },
+    { id: 'b-amstel',    name: 'Amstel',                 abv: 4.1 },
+    { id: 'b-moretti',   name: 'Birra Moretti',          abv: 4.6 },
+    { id: 'b-punk',      name: 'BrewDog Punk IPA',       abv: 5.4 },
+    { id: 'b-bud',       name: 'Budweiser',              abv: 4.5 },
+    { id: 'b-camden',    name: 'Camden Hells',           abv: 4.6 },
+    { id: 'b-carling',   name: 'Carling',                abv: 4.0 },
+    { id: 'b-coors',     name: 'Coors',                  abv: 4.0 },
+    { id: 'b-corona',    name: 'Corona Extra',           abv: 4.5 },
+    { id: 'b-estrella',  name: 'Estrella Damm',          abv: 4.6 },
+    { id: 'b-fosters',   name: "Foster's",               abv: 3.7 },
+    { id: 'b-guinness',  name: 'Guinness Draught',       abv: 4.2 },
+    { id: 'b-heineken',  name: 'Heineken',               abv: 5.0 },
+    { id: 'b-madri',     name: 'Madrí Excepcional',      abv: 4.6 },
+    { id: 'b-peroni',    name: 'Peroni Nastro Azzurro',  abv: 5.1 },
+    { id: 'b-sanmiguel', name: 'San Miguel',             abv: 5.0 },
+    { id: 'b-stella',    name: 'Stella Artois',          abv: 4.6 },
+  ];
+
+  const DEFAULT_SETTINGS = { weeklyTarget: 14, cutoffHour: 4, presets: DEFAULT_PRESETS, beers: DEFAULT_BEERS, selectedBeer: GENERIC_BEER_ID };
 
   // ---------- State ----------
   let state = load();
@@ -40,13 +62,19 @@
     if (!Array.isArray(s.presets) || !s.presets.length) s.presets = DEFAULT_PRESETS.map(p => ({ ...p }));
     s.presets = s.presets.map(p => ({
       id: p.id || uid(), type: TYPES[p.type] ? p.type : 'other',
-      name: String(p.name || 'Drink'), size: String(p.size || ''), units: num(p.units, 1),
+      name: p.id === 'p-beer-pint' && p.name === 'Pint can' ? 'Pint' : String(p.name || 'Drink'),
+      size: String(p.size || ''), ml: Math.max(0, num(p.ml, parseMl(p.size))), units: num(p.units, 1),
     }));
+    if (!Array.isArray(s.beers) || !s.beers.length) s.beers = DEFAULT_BEERS.map(b => ({ ...b }));
+    s.beers = s.beers.map(b => ({ id: b.id || uid(), name: String(b.name || 'Beer').slice(0, 40), abv: Math.min(100, Math.max(0, num(b.abv, 4.5))) }));
+    if (!s.beers.some(b => b.id === GENERIC_BEER_ID)) s.beers.unshift({ ...DEFAULT_BEERS[0] });
+    if (!s.beers.some(b => b.id === s.selectedBeer)) s.selectedBeer = GENERIC_BEER_ID;
     s.weeklyTarget = num(s.weeklyTarget, 14);
     s.cutoffHour = Math.min(12, Math.max(0, Math.round(num(s.cutoffHour, 4))));
     const entries = (Array.isArray(obj.entries) ? obj.entries : []).map(e => ({
       id: e.id || uid(), ts: num(e.ts, Date.now()), type: TYPES[e.type] ? e.type : 'other',
       name: String(e.name || 'Drink'), size: String(e.size || ''), units: num(e.units, 0),
+      ml: num(e.ml, 0) > 0 ? num(e.ml, 0) : null, brand: e.brand ? String(e.brand).slice(0, 40) : null, abv: num(e.abv, 0) > 0 ? num(e.abv, 0) : null,
     })).filter(e => Number.isFinite(e.ts));
     entries.sort((a, b) => b.ts - a.ts);
     return { version: 1, settings: s, entries };
@@ -57,6 +85,28 @@
   }
   function num(v, d) { const n = Number(v); return Number.isFinite(n) ? n : d; }
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  function parseMl(size) { const m = String(size || '').match(/(\d+(?:\.\d+)?)\s*ml/i); return m ? Number(m[1]) : 0; }
+
+  // ---------- Beers ----------
+  function beers() { return state.settings.beers; }
+  function beerById(id) { return beers().find(b => b.id === id) || beers().find(b => b.id === GENERIC_BEER_ID) || beers()[0]; }
+  function currentBeer() { return beerById(state.settings.selectedBeer); }
+  function sortedBeers() { return beers().slice().sort((a, b) => (a.id === GENERIC_BEER_ID ? -1 : b.id === GENERIC_BEER_ID ? 1 : a.name.localeCompare(b.name))); }
+  function fmtAbv(a) { return Number(a).toFixed(1); }
+  function unitsFor(abv, ml) { return round1(abv * ml / 1000); }
+  // Units for a preset: beer presets with a known volume follow the chosen beer's ABV; everything else is fixed.
+  function presetUnits(p, beer) {
+    if (p.type === 'beer' && p.ml > 0) { const b = beer || currentBeer(); if (b) return unitsFor(b.abv, p.ml); }
+    return round1(p.units);
+  }
+  function beerPresets() { return state.settings.presets.filter(p => p.type === 'beer' && p.ml > 0); }
+  // "4.2% · can 1.8 u · pint 2.4 u"
+  function beerSummary(b) {
+    const bp = beerPresets();
+    const short = (n) => n.toLowerCase().replace(/^standard\s+/, '');
+    return `${fmtAbv(b.abv)}%` + (bp.length ? bp.map(p => ` · ${short(p.name)} ${fmtUnits(unitsFor(b.abv, p.ml))} u`).join('') : ' ABV');
+  }
+  function entryLabel(e) { return e.brand ? `${e.name} · ${e.brand}` : e.name; }
 
   // ---------- Dates (with day cutoff) ----------
   const cutoff = () => state.settings.cutoffHour;
@@ -89,8 +139,10 @@
   }
 
   // ---------- Entries ----------
-  function addEntry(preset, ts) {
-    const e = { id: uid(), ts: ts || Date.now(), type: preset.type, name: preset.name, size: preset.size, units: round1(preset.units) };
+  function addEntry(preset, ts, beer) {
+    const ml = num(preset.ml, 0) > 0 ? num(preset.ml, 0) : (parseMl(preset.size) || null);
+    const e = { id: uid(), ts: ts || Date.now(), type: preset.type, name: preset.name, size: preset.size, units: round1(preset.units), ml, brand: null, abv: null };
+    if (preset.type === 'beer' && beer) { e.abv = beer.abv; if (beer.id !== GENERIC_BEER_ID) e.brand = beer.name; }
     state.entries.push(e); state.entries.sort((a, b) => b.ts - a.ts); save();
     return e;
   }
@@ -184,13 +236,14 @@
 
   // ---------- Views ----------
   const view = $('#view');
-  const routes = { log: renderLog, history: renderHistory, charts: renderCharts, settings: renderSettings };
+  const routes = { log: renderLog, history: renderHistory, charts: renderCharts, settings: renderSettings, beers: renderBeers };
+  const tabFor = { beers: 'settings' };
   let chartState = { period: 'weekly', offset: 0, selected: null, table: false };
 
   function currentTab() { const hsh = location.hash.replace('#', ''); return routes[hsh] ? hsh : 'log'; }
   function render() {
     const tab = currentTab();
-    document.querySelectorAll('.tab').forEach(a => a.setAttribute('aria-current', a.dataset.tab === tab ? 'page' : 'false'));
+    document.querySelectorAll('.tab').forEach(a => a.setAttribute('aria-current', a.dataset.tab === (tabFor[tab] || tab) ? 'page' : 'false'));
     view.innerHTML = '';
     view.appendChild(routes[tab]());
     window.scrollTo(0, 0);
@@ -231,14 +284,18 @@
       drinkFreeCard(todayEntries.length === 0),
       h('section', { class: 'stack' },
         h('div', { class: 'row between' }, h('h2', null, 'Quick add'), h('button', { class: 'btn sm ghost', type: 'button', onclick: openAddSheet }, 'Other time…')),
+        beerPresets().length ? beerChooser() : null,
         h('div', { class: 'quick-grid' },
           state.settings.presets.map(p => {
             const n = countsToday[p.name + '|' + p.size] || 0;
-            return h('button', { class: 'quick-btn', type: 'button', style: `--series: var(--s-${p.type})`, 'aria-label': `Add ${p.name} ${p.size}, ${fmtUnits(p.units)} units`, onclick: () => quickAdd(p) },
+            const beer = p.type === 'beer' && p.ml > 0 ? currentBeer() : null;
+            const units = presetUnits(p, beer);
+            const meta = beer && beer.id !== GENERIC_BEER_ID ? `${beer.name}${p.size ? ' · ' + p.size : ''}` : `${TYPES[p.type].label}${p.size ? ' · ' + p.size : ''}`;
+            return h('button', { class: 'quick-btn', type: 'button', style: `--series: var(--s-${p.type})`, 'aria-label': `Add ${p.name} ${meta}, ${fmtUnits(units)} units`, onclick: () => quickAdd(p) },
               h('span', { class: 'q-icon', 'aria-hidden': 'true' }, TYPES[p.type].icon),
-              h('span', { class: 'q-units' }, fmtUnits(p.units), ' u'),
+              h('span', { class: 'q-units' }, fmtUnits(units), ' u'),
               h('span', { class: 'q-name' }, p.name),
-              h('span', { class: 'q-meta' }, TYPES[p.type].label, p.size ? ' · ' + p.size : ''),
+              h('span', { class: 'q-meta' }, meta),
               n ? h('span', { class: 'q-count' }, `×${n} today`) : null);
           }))),
       todayEntries.length ? h('section', { class: 'stack' },
@@ -273,36 +330,83 @@
   }
 
   function quickAdd(p) {
-    const e = addEntry(p);
+    const beer = p.type === 'beer' ? currentBeer() : null;
+    const e = addEntry({ ...p, units: presetUnits(p, beer) }, null, beer);
     if (navigator.vibrate) { try { navigator.vibrate(12); } catch (_) {} }
     render();
-    toast(`Added ${p.name} · ${fmtUnits(p.units)} units`, { label: 'Undo', fn: () => { removeEntry(e.id); render(); } });
+    toast(`Added ${entryLabel(e)} · ${fmtUnits(e.units)} units`, { label: 'Undo', fn: () => { removeEntry(e.id); render(); } });
+  }
+
+  function beerChooser() {
+    const b = currentBeer();
+    return h('button', { class: 'beer-chip', type: 'button', 'aria-label': `Beer type: ${b.name}, ${fmtAbv(b.abv)}% ABV. Tap to change`, onclick: openBeerPicker },
+      h('span', { class: 'bc-icon', 'aria-hidden': 'true' }, '🍺'),
+      h('span', { class: 'grow' },
+        h('span', { class: 'bc-label' }, 'Beer type'),
+        h('span', { class: 'bc-value' }, `${b.name} · ${fmtAbv(b.abv)}%`)),
+      h('span', { class: 'bc-change' }, 'Change'));
+  }
+
+  function openBeerPicker() {
+    const rows = sortedBeers().map(b => {
+      const sel = b.id === state.settings.selectedBeer;
+      return h('button', { class: 'pick-row' + (sel ? ' selected' : ''), type: 'button', 'aria-pressed': String(sel), onclick: () => {
+        state.settings.selectedBeer = b.id; save(); closeSheet(); render();
+        toast(`Beer set to ${b.name}`);
+      } },
+        h('span', { class: 'grow' },
+          h('div', { class: 'pick-name' }, b.name),
+          h('div', { class: 'pick-meta' }, beerSummary(b))),
+        h('span', { class: 'pick-check', 'aria-hidden': 'true' }, sel ? '✓' : ''));
+    });
+    const body = h('div', { class: 'stack' },
+      h('p', { class: 'small muted' }, 'The can and pint buttons use this beer\u2019s strength to work out units. Choose Generic beer if you are not sure.'),
+      h('div', { class: 'pick-list' }, rows));
+    const footer = h('div', { class: 'btn-row' },
+      h('button', { class: 'btn block', type: 'button', onclick: () => { closeSheet(); location.hash = '#beers'; } }, 'Add or edit beers'));
+    openSheet('Which beer?', body, footer);
+  }
+
+  function beerSelect(selectedId, extraBrand) {
+    const opts = sortedBeers().map(b => h('option', { value: b.id, selected: b.id === selectedId }, `${b.name} · ${fmtAbv(b.abv)}%`));
+    if (extraBrand && !beers().some(b => b.name === extraBrand)) opts.push(h('option', { value: '__keep', selected: selectedId === '__keep' }, `${extraBrand} (as logged)`));
+    return h('select', { class: 'input' }, opts);
   }
 
   function openAddSheet(prefill) {
     const presets = state.settings.presets;
     const presetSel = h('select', { class: 'input', id: 'add-preset' },
-      presets.map((p, i) => h('option', { value: p.id, selected: i === 0 }, `${TYPES[p.type].icon} ${p.name} ${p.size} · ${fmtUnits(p.units)} u`)),
+      presets.map((p, i) => h('option', { value: p.id, selected: i === 0 }, `${TYPES[p.type].icon} ${p.name} ${p.size} · ${fmtUnits(presetUnits(p))} u`)),
       h('option', { value: '__custom' }, 'Custom drink…'));
     const typeSel = h('select', { class: 'input' }, TYPE_ORDER.map(t => h('option', { value: t }, TYPES[t].label)));
     const nameIn = h('input', { class: 'input', type: 'text', placeholder: 'e.g. Bottle of IPA', maxlength: 40 });
     const sizeIn = h('input', { class: 'input', type: 'text', placeholder: 'e.g. 330ml', maxlength: 16 });
-    const unitsIn = h('input', { class: 'input', type: 'number', step: '0.1', min: '0', inputmode: 'decimal', value: fmtUnits(presets[0].units) });
+    const unitsIn = h('input', { class: 'input', type: 'number', step: '0.1', min: '0', inputmode: 'decimal', value: fmtUnits(presetUnits(presets[0])) });
     const whenIn = h('input', { class: 'input', type: 'datetime-local', value: toLocalInput(Date.now()) });
     const qtyIn = h('input', { class: 'input', type: 'number', min: '1', max: '20', step: '1', inputmode: 'numeric', value: '1' });
+    const beerSel = beerSelect(state.settings.selectedBeer);
+    const beerBox = h('div', { class: 'field', hidden: true }, h('label', null, 'Beer'), beerSel);
     const customBox = h('div', { class: 'stack', hidden: true },
       h('div', { class: 'field-row' },
         h('div', { class: 'field' }, h('label', null, 'Type'), typeSel),
         h('div', { class: 'field' }, h('label', null, 'Size'), sizeIn)),
       h('div', { class: 'field' }, h('label', null, 'Name'), nameIn));
-    presetSel.addEventListener('change', () => {
-      const p = presets.find(x => x.id === presetSel.value);
-      customBox.hidden = !!p;
-      if (p) unitsIn.value = fmtUnits(p.units);
-    });
+    const selectedPreset = () => presets.find(x => x.id === presetSel.value);
+    const isBeer = () => { const p = selectedPreset(); return p ? p.type === 'beer' : typeSel.value === 'beer'; };
+    const volume = () => { const p = selectedPreset(); return p ? (p.ml || parseMl(p.size)) : parseMl(sizeIn.value); };
+    const recalc = () => {
+      const p = selectedPreset();
+      beerBox.hidden = !isBeer();
+      if (isBeer() && volume() > 0) unitsIn.value = fmtUnits(unitsFor(beerById(beerSel.value).abv, volume()));
+      else if (p) unitsIn.value = fmtUnits(presetUnits(p));
+    };
+    presetSel.addEventListener('change', () => { customBox.hidden = !!selectedPreset(); recalc(); });
+    typeSel.addEventListener('change', recalc); sizeIn.addEventListener('input', recalc); beerSel.addEventListener('change', recalc);
+    recalc();
     const body = h('div', { class: 'stack' },
       h('div', { class: 'field' }, h('label', { for: 'add-preset' }, 'Drink'), presetSel),
       customBox,
+      beerBox,
       h('div', { class: 'field-row' },
         h('div', { class: 'field' }, h('label', null, 'Units each'), unitsIn),
         h('div', { class: 'field' }, h('label', null, 'How many'), qtyIn)),
@@ -313,12 +417,13 @@
         const ts = fromLocalInput(whenIn.value); if (ts == null) { toast('Please choose a valid date and time.'); return; }
         const units = num(unitsIn.value, NaN); if (!(units >= 0)) { toast('Please enter the units.'); return; }
         const qty = Math.min(20, Math.max(1, Math.round(num(qtyIn.value, 1))));
-        let preset = presets.find(x => x.id === presetSel.value);
-        if (!preset) preset = { type: typeSel.value, name: nameIn.value.trim() || TYPES[typeSel.value].label, size: sizeIn.value.trim() };
-        const ids = [];
-        for (let i = 0; i < qty; i++) ids.push(addEntry({ ...preset, units }, ts + i).id);
+        let preset = selectedPreset();
+        if (!preset) preset = { type: typeSel.value, name: nameIn.value.trim() || TYPES[typeSel.value].label, size: sizeIn.value.trim(), ml: parseMl(sizeIn.value) };
+        const beer = isBeer() ? beerById(beerSel.value) : null;
+        const ids = []; let label = preset.name;
+        for (let i = 0; i < qty; i++) { const e = addEntry({ ...preset, units }, ts + i, beer); ids.push(e.id); label = entryLabel(e); }
         closeSheet(); render();
-        toast(`Added ${qty > 1 ? qty + ' × ' : ''}${preset.name} · ${fmtUnits(units * qty)} units`, { label: 'Undo', fn: () => { ids.forEach(removeEntry); render(); } });
+        toast(`Added ${qty > 1 ? qty + ' × ' : ''}${label} · ${fmtUnits(units * qty)} units`, { label: 'Undo', fn: () => { ids.forEach(removeEntry); render(); } });
       } }, 'Add'));
     openSheet('Log a drink', body, footer);
   }
@@ -326,10 +431,10 @@
   function entryRow(e) {
     const d = new Date(e.ts);
     return h('div', { class: 'entry', style: `--series: var(--s-${e.type})` },
-      h('button', { class: 'e-main', type: 'button', 'aria-label': `Edit ${e.name}, ${fmtUnits(e.units)} units at ${fmtTime.format(d)}`, onclick: () => openEditSheet(e) },
+      h('button', { class: 'e-main', type: 'button', 'aria-label': `Edit ${entryLabel(e)}, ${fmtUnits(e.units)} units at ${fmtTime.format(d)}`, onclick: () => openEditSheet(e) },
         h('span', { class: 'e-swatch', 'aria-hidden': 'true' }),
         h('span', { class: 'grow' },
-          h('div', { class: 'e-name' }, TYPES[e.type].icon + ' ' + e.name),
+          h('div', { class: 'e-name' }, TYPES[e.type].icon + ' ' + entryLabel(e)),
           h('div', { class: 'e-meta' }, fmtTime.format(d), e.size ? ' · ' + e.size : '', ' · ', TYPES[e.type].label)),
         h('span', { class: 'e-units' }, fmtUnits(e.units), ' u')),
       h('button', { class: 'e-delete', type: 'button', 'aria-label': `Remove ${e.name}`, onclick: () => deleteEntryWithUndo(e) },
@@ -339,7 +444,7 @@
   function deleteEntryWithUndo(e) {
     const snapshot = { ...e };
     removeEntry(e.id); closeSheet(); render();
-    toast(`Removed ${e.name} · ${fmtUnits(e.units)} units`, { label: 'Undo', fn: () => { state.entries.push(snapshot); state.entries.sort((a, b) => b.ts - a.ts); save(); render(); } });
+    toast(`Removed ${entryLabel(e)} · ${fmtUnits(e.units)} units`, { label: 'Undo', fn: () => { state.entries.push(snapshot); state.entries.sort((a, b) => b.ts - a.ts); save(); render(); } });
   }
 
   function openEditSheet(e) {
@@ -348,11 +453,21 @@
     const nameIn = h('input', { class: 'input', type: 'text', value: e.name, maxlength: 40 });
     const sizeIn = h('input', { class: 'input', type: 'text', value: e.size, maxlength: 16 });
     const typeSel = h('select', { class: 'input' }, TYPE_ORDER.map(t => h('option', { value: t, selected: t === e.type }, TYPES[t].label)));
+    const matched = e.brand ? beers().find(b => b.name === e.brand) : null;
+    const beerSel = beerSelect(e.brand ? (matched ? matched.id : '__keep') : GENERIC_BEER_ID, e.brand);
+    const beerBox = h('div', { class: 'field', hidden: e.type !== 'beer' }, h('label', null, 'Beer'), beerSel);
+    const volume = () => e.ml || parseMl(sizeIn.value);
+    beerSel.addEventListener('change', () => {
+      if (beerSel.value === '__keep') return;
+      if (volume() > 0) unitsIn.value = fmtUnits(unitsFor(beerById(beerSel.value).abv, volume()));
+    });
+    typeSel.addEventListener('change', () => { beerBox.hidden = typeSel.value !== 'beer'; });
     const body = h('div', { class: 'stack' },
       h('div', { class: 'field-row' },
         h('div', { class: 'field' }, h('label', null, 'Type'), typeSel),
         h('div', { class: 'field' }, h('label', null, 'Size'), sizeIn)),
       h('div', { class: 'field' }, h('label', null, 'Name'), nameIn),
+      beerBox,
       h('div', { class: 'field-row' },
         h('div', { class: 'field' }, h('label', null, 'Units'), unitsIn),
         h('div', { class: 'field' }, h('label', null, 'When'), whenIn)));
@@ -361,7 +476,10 @@
       h('button', { class: 'btn primary', type: 'button', onclick: () => {
         const ts = fromLocalInput(whenIn.value); if (ts == null) { toast('Please choose a valid date and time.'); return; }
         const units = num(unitsIn.value, NaN); if (!(units >= 0)) { toast('Please enter the units.'); return; }
-        updateEntry(e.id, { ts, units: round1(units), name: nameIn.value.trim() || e.name, size: sizeIn.value.trim(), type: typeSel.value });
+        const patch = { ts, units: round1(units), name: nameIn.value.trim() || e.name, size: sizeIn.value.trim(), type: typeSel.value, ml: volume() || null };
+        if (typeSel.value !== 'beer') { patch.brand = null; patch.abv = null; }
+        else if (beerSel.value !== '__keep') { const b = beerById(beerSel.value); patch.brand = b.id === GENERIC_BEER_ID ? null : b.name; patch.abv = b.abv; }
+        updateEntry(e.id, patch);
         closeSheet(); render(); toast('Saved');
       } }, 'Save'));
     openSheet('Edit drink', body, footer);
@@ -615,7 +733,7 @@
     const presetsList = h('div', { class: 'list' },
       st.presets.map((p, i) => h('div', { class: 'preset-row', style: `--series: var(--s-${p.type})` },
         h('span', { class: 'p-swatch' }),
-        h('div', null, h('div', { class: 'p-name' }, TYPES[p.type].icon + ' ' + p.name), h('div', { class: 'p-meta' }, `${TYPES[p.type].label}${p.size ? ' · ' + p.size : ''} · ${fmtUnits(p.units)} units`)),
+        h('div', null, h('div', { class: 'p-name' }, TYPES[p.type].icon + ' ' + p.name), h('div', { class: 'p-meta' }, `${TYPES[p.type].label}${p.size ? ' · ' + p.size : ''} · ${fmtUnits(presetUnits(p, beerById(GENERIC_BEER_ID)))} units` + (p.type === 'beer' && p.ml > 0 ? ' (generic; adjusts by beer)' : ''))),
         h('div', { class: 'row', style: 'gap:6px' },
           h('button', { class: 'btn sm', type: 'button', 'aria-label': `Move ${p.name} up`, disabled: i === 0, onclick: () => { const a = st.presets; [a[i - 1], a[i]] = [a[i], a[i - 1]]; save(); render(); } }, '↑'),
           h('button', { class: 'btn sm', type: 'button', onclick: () => openPresetSheet(p) }, 'Edit')))));
@@ -628,6 +746,10 @@
         h('div', { class: 'settings-row' }, h('div', null, h('div', { class: 'label' }, 'Weekly target'), h('div', { class: 'sub' }, 'UK guideline is 14 units. 0 hides it.')), targetIn),
         h('div', { class: 'settings-row' }, h('div', null, h('div', { class: 'label' }, 'Day ends at'), h('div', { class: 'sub' }, 'Late drinks count towards the evening before.')), cutoffSel),
         h('div', { class: 'settings-row' }, h('div', null, h('div', { class: 'label' }, 'Appearance')), themeSel)),
+      h('a', { class: 'card nav-card', href: '#beers' },
+        h('span', { class: 'nav-icon', 'aria-hidden': 'true' }, '🍺'),
+        h('span', { class: 'grow' }, h('div', { class: 'label' }, 'Beers'), h('div', { class: 'sub' }, `${beers().length} beers with their ABV. Pick one on the Log tab and can or pint units adjust.`)),
+        h('span', { class: 'nav-chevron', 'aria-hidden': 'true' }, '›')),
       h('section', { class: 'card stack' },
         h('div', { class: 'row between' }, h('h2', null, 'Quick-add drinks'), h('button', { class: 'btn sm', type: 'button', onclick: () => openPresetSheet(null) }, '+ Add')),
         presetsList,
@@ -649,30 +771,37 @@
 
   function openPresetSheet(p) {
     const isNew = !p;
-    const draft = p ? { ...p } : { id: uid(), type: 'beer', name: '', size: '', units: 2 };
+    const draft = p ? { ...p } : { id: uid(), type: 'beer', name: '', size: '', ml: 0, units: 2 };
+    const generic = beerById(GENERIC_BEER_ID);
     const typeSel = h('select', { class: 'input' }, TYPE_ORDER.map(t => h('option', { value: t, selected: t === draft.type }, TYPES[t].label)));
     const nameIn = h('input', { class: 'input', type: 'text', value: draft.name, placeholder: 'e.g. Bottle', maxlength: 24 });
-    const sizeIn = h('input', { class: 'input', type: 'text', value: draft.size, placeholder: 'e.g. 330ml', maxlength: 12, inputmode: 'numeric' });
+    const sizeIn = h('input', { class: 'input', type: 'text', value: draft.size, placeholder: 'e.g. 330ml', maxlength: 12 });
+    const mlIn = h('input', { class: 'input', type: 'number', step: '1', min: '0', inputmode: 'numeric', value: draft.ml > 0 ? draft.ml : '', placeholder: '440' });
     const unitsIn = h('input', { class: 'input', type: 'number', step: '0.1', min: '0', inputmode: 'decimal', value: fmtUnits(draft.units) });
-    const abvIn = h('input', { class: 'input', type: 'number', step: '0.1', min: '0', max: '100', inputmode: 'decimal', placeholder: '4.5' });
-    const mlIn = h('input', { class: 'input', type: 'number', step: '1', min: '0', inputmode: 'numeric', placeholder: '440' });
+    const abvIn = h('input', { class: 'input', type: 'number', step: '0.1', min: '0', max: '100', inputmode: 'decimal', placeholder: fmtAbv(generic.abv) });
+    const beerNote = h('span', { class: 'hint' }, `For beer, this is the units at ${fmtAbv(generic.abv)}% (generic beer). Choosing a beer on the Log tab adjusts it automatically.`);
     const calc = () => {
-      const abv = num(abvIn.value, NaN), ml = num(mlIn.value, NaN);
-      if (abv > 0 && ml > 0) { unitsIn.value = fmtUnits(abv * ml / 1000); if (!sizeIn.value) sizeIn.value = Math.round(ml) + 'ml'; }
+      const ml = num(mlIn.value, 0);
+      const abv = num(abvIn.value, NaN);
+      beerNote.hidden = !(typeSel.value === 'beer' && ml > 0);
+      if (typeSel.value === 'beer' && ml > 0) unitsIn.value = fmtUnits(unitsFor(generic.abv, ml));
+      else if (abv > 0 && ml > 0) unitsIn.value = fmtUnits(unitsFor(abv, ml));
+      if (ml > 0 && (!sizeIn.value || /^\d+(\.\d+)?\s*ml$/i.test(sizeIn.value))) sizeIn.value = Math.round(ml) + 'ml';
     };
-    abvIn.addEventListener('input', calc); mlIn.addEventListener('input', calc);
-    sizeIn.addEventListener('input', () => { const mm = sizeIn.value.match(/(\d+)/); if (mm && !mlIn.value) mlIn.placeholder = mm[1]; });
+    abvIn.addEventListener('input', calc); mlIn.addEventListener('input', calc); typeSel.addEventListener('change', calc);
+    sizeIn.addEventListener('input', () => { const ml = parseMl(sizeIn.value); if (ml && !mlIn.value) { mlIn.value = ml; calc(); } });
+    calc();
     const body = h('div', { class: 'stack' },
       h('div', { class: 'field-row' },
         h('div', { class: 'field' }, h('label', null, 'Type'), typeSel),
-        h('div', { class: 'field' }, h('label', null, 'Size'), sizeIn)),
-      h('div', { class: 'field' }, h('label', null, 'Name'), nameIn),
-      h('div', { class: 'field' }, h('label', null, 'Units per drink'), unitsIn),
-      h('details', null, h('summary', null, 'Work out units from ABV and volume'),
-        h('div', { class: 'field-row', style: 'margin-top:10px' },
-          h('div', { class: 'field' }, h('label', null, 'ABV %'), abvIn),
-          h('div', { class: 'field' }, h('label', null, 'Volume ml'), mlIn)),
-        h('p', { class: 'hint', style: 'margin-top:6px' }, 'Units = ABV × ml ÷ 1000')));
+        h('div', { class: 'field' }, h('label', null, 'Name'), nameIn)),
+      h('div', { class: 'field-row' },
+        h('div', { class: 'field' }, h('label', null, 'Volume ml'), mlIn),
+        h('div', { class: 'field' }, h('label', null, 'Size label'), sizeIn)),
+      h('div', { class: 'field' }, h('label', null, 'Units per drink'), unitsIn, beerNote),
+      h('details', null, h('summary', null, 'Work out units from ABV'),
+        h('div', { class: 'field', style: 'margin-top:10px' }, h('label', null, 'ABV %'), abvIn),
+        h('p', { class: 'hint', style: 'margin-top:6px' }, 'Units = ABV × ml ÷ 1000. Uses the volume above.')));
     const footer = h('div', { class: 'btn-row' },
       !isNew ? h('button', { class: 'btn danger', type: 'button', onclick: () => {
         if (state.settings.presets.length <= 1) { toast('Keep at least one quick-add drink.'); return; }
@@ -681,12 +810,67 @@
       h('button', { class: 'btn primary', type: 'button', onclick: () => {
         const units = num(unitsIn.value, NaN); if (!(units >= 0)) { toast('Please enter the units.'); return; }
         const name = nameIn.value.trim() || TYPES[typeSel.value].label;
-        const next = { id: draft.id, type: typeSel.value, name, size: sizeIn.value.trim(), units: round1(units) };
+        const ml = Math.max(0, num(mlIn.value, 0));
+        const next = { id: draft.id, type: typeSel.value, name, size: sizeIn.value.trim() || (ml > 0 ? ml + 'ml' : ''), ml, units: round1(units) };
         if (isNew) state.settings.presets.push(next);
         else { const i = state.settings.presets.findIndex(x => x.id === p.id); if (i >= 0) state.settings.presets[i] = next; }
         save(); closeSheet(); render(); toast('Saved');
       } }, 'Save'));
     openSheet(isNew ? 'New quick-add drink' : 'Edit quick-add drink', body, footer);
+  }
+
+  // --- Beers reference page ---
+  function renderBeers() {
+    const list = sortedBeers();
+    return h('div', { class: 'stack' },
+      h('div', { class: 'view-header' }, h('h1', null, 'Beers'), h('a', { class: 'btn sm ghost', href: '#settings' }, '‹ Settings')),
+      h('p', { class: 'small muted' }, 'Your reference list of beers and their strength. Pick one on the Log tab and the units for a can or pint adjust automatically. ABVs are typical UK figures: check the can and edit if yours differs.'),
+      h('section', { class: 'card stack' },
+        h('div', { class: 'row between' }, h('h2', null, `${list.length} beers`), h('button', { class: 'btn sm', type: 'button', onclick: () => openBeerSheet(null) }, '+ Add beer')),
+        h('div', { class: 'list' }, list.map(b => {
+          const sel = b.id === state.settings.selectedBeer;
+          return h('div', { class: 'preset-row', style: '--series: var(--s-beer)' },
+            h('span', { class: 'p-swatch' }),
+            h('div', null,
+              h('div', { class: 'p-name' }, b.name, sel ? h('span', { class: 'tag' }, 'selected') : null),
+              h('div', { class: 'p-meta' }, beerSummary(b))),
+            h('button', { class: 'btn sm', type: 'button', onclick: () => openBeerSheet(b) }, 'Edit'));
+        }))),
+      h('p', { class: 'small muted' }, 'Units = ABV% × ml ÷ 1000. A 440ml can at 4.2% is 1.8 units; a 568ml pint at 5.0% is 2.8.'));
+  }
+
+  function openBeerSheet(b) {
+    const isNew = !b;
+    const isGeneric = b && b.id === GENERIC_BEER_ID;
+    const draft = b ? { ...b } : { id: uid(), name: '', abv: 4.5 };
+    const nameIn = h('input', { class: 'input', type: 'text', value: draft.name, placeholder: 'e.g. Guinness Draught', maxlength: 40, disabled: isGeneric || null });
+    const abvIn = h('input', { class: 'input', type: 'number', step: '0.1', min: '0', max: '100', inputmode: 'decimal', value: fmtAbv(draft.abv) });
+    const preview = h('p', { class: 'hint' });
+    const bp = beerPresets();
+    const upd = () => { const a = num(abvIn.value, 0); preview.textContent = bp.length ? bp.map(p => `${p.name} ${p.size}: ${fmtUnits(unitsFor(a, p.ml))} units`).join(' · ') : `${fmtUnits(unitsFor(a, 568))} units per pint`; };
+    abvIn.addEventListener('input', upd); upd();
+    const useIt = h('label', { class: 'check' }, h('input', { type: 'checkbox', checked: (b && b.id === state.settings.selectedBeer) || isNew || null }), ' Use this beer now');
+    const body = h('div', { class: 'stack' },
+      h('div', { class: 'field' }, h('label', null, 'Name'), nameIn, isGeneric ? h('span', { class: 'hint' }, 'The fallback when you have not chosen a specific beer.') : null),
+      h('div', { class: 'field' }, h('label', null, 'ABV %'), abvIn, preview),
+      useIt);
+    const footer = h('div', { class: 'btn-row' },
+      (!isNew && !isGeneric) ? h('button', { class: 'btn danger', type: 'button', onclick: () => {
+        state.settings.beers = beers().filter(x => x.id !== b.id);
+        if (state.settings.selectedBeer === b.id) state.settings.selectedBeer = GENERIC_BEER_ID;
+        save(); closeSheet(); render(); toast(`Removed ${b.name}`);
+      } }, 'Remove') : null,
+      h('button', { class: 'btn primary', type: 'button', onclick: () => {
+        const abv = num(abvIn.value, NaN); if (!(abv >= 0 && abv <= 100)) { toast('Please enter the ABV.'); return; }
+        const name = isGeneric ? b.name : nameIn.value.trim(); if (!name) { toast('Please enter a name.'); return; }
+        const next = { id: draft.id, name, abv: Math.round(abv * 10) / 10 };
+        if (isNew) state.settings.beers.push(next);
+        else { const i = state.settings.beers.findIndex(x => x.id === b.id); if (i >= 0) state.settings.beers[i] = next; }
+        if (useIt.querySelector('input').checked) state.settings.selectedBeer = next.id;
+        else if (state.settings.selectedBeer === next.id) state.settings.selectedBeer = GENERIC_BEER_ID;
+        save(); closeSheet(); render(); toast('Saved');
+      } }, 'Save'));
+    openSheet(isNew ? 'Add a beer' : isGeneric ? 'Generic beer' : 'Edit beer', body, footer);
   }
 
   // ---------- Theme ----------
@@ -706,10 +890,10 @@
   function stamp() { const d = new Date(); return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()); }
   function exportJSON() { download(`units-backup-${stamp()}.json`, JSON.stringify(state, null, 2), 'application/json'); }
   function exportCSV() {
-    const rows = [['date', 'time', 'effective_day', 'type', 'name', 'size', 'units']];
+    const rows = [['date', 'time', 'effective_day', 'type', 'name', 'beer', 'abv', 'size', 'units']];
     state.entries.slice().reverse().forEach(e => {
       const d = new Date(e.ts);
-      rows.push([dayKey(d), fmtTime.format(d), dayKey(effectiveDate(e.ts)), TYPES[e.type].label, e.name, e.size, fmtUnits(e.units)]);
+      rows.push([dayKey(d), fmtTime.format(d), dayKey(effectiveDate(e.ts)), TYPES[e.type].label, e.name, e.brand || '', e.abv != null ? fmtAbv(e.abv) : '', e.size, fmtUnits(e.units)]);
     });
     const csv = rows.map(r => r.map(v => /[",\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : v).join(',')).join('\n');
     download(`units-${stamp()}.csv`, csv, 'text/csv');

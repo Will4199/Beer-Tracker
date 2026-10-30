@@ -147,6 +147,37 @@ p { margin: 0; }
 .df-week-n small { font-size: 13px; color: var(--muted); font-weight: 500; }
 .df-week-l { font-size: 11px; color: var(--muted); margin-top: 3px; }
 
+/* ---------- Beer chooser & picker ---------- */
+.beer-chip {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 8px 14px;
+  background: var(--surface); border: 1px solid var(--border); border-left: 6px solid var(--s-beer); border-radius: 12px; text-align: left;
+}
+.beer-chip:active { background: var(--surface-2); }
+.beer-chip .bc-icon { font-size: 22px; line-height: 1; }
+.beer-chip .bc-label { display: block; font-size: 12px; color: var(--muted); }
+.beer-chip .bc-value { display: block; font-weight: 650; font-size: 15px; }
+.beer-chip .bc-change { color: var(--accent); font-weight: 600; font-size: 14px; }
+.pick-list { display: flex; flex-direction: column; gap: 6px; }
+.pick-row {
+  display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 10px 14px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; text-align: left;
+}
+.pick-row.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.pick-row:active { background: var(--surface-2); }
+.pick-row .pick-name { font-weight: 600; }
+.pick-row .pick-meta { font-size: 13px; color: var(--ink-2); }
+.pick-row .pick-check { color: var(--accent); font-weight: 700; font-size: 18px; width: 20px; text-align: center; }
+.tag { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 11px; font-weight: 600; vertical-align: middle; }
+.nav-card { display: flex; align-items: center; gap: 14px; text-decoration: none; color: inherit; }
+.nav-card:active { background: var(--surface-2); }
+.nav-card .nav-icon { font-size: 26px; line-height: 1; }
+.nav-card .label { font-weight: 650; }
+.nav-card .sub { font-size: 13px; color: var(--muted); }
+.nav-card .nav-chevron { font-size: 26px; color: var(--muted); line-height: 1; }
+.check { display: flex; align-items: center; gap: 10px; min-height: 44px; font-weight: 600; font-size: 15px; }
+.check input { width: 22px; height: 22px; accent-color: var(--accent); }
+.view-header a.btn { text-decoration: none; }
+
 /* ---------- Quick add ---------- */
 .quick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .quick-btn {
