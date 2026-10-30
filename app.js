@@ -103,6 +103,20 @@
     const f = from.getTime(), t = to.getTime();
     return state.entries.filter(e => { const d = effectiveDate(e.ts).getTime(); return d >= f && d < t; });
   }
+  function hasDrinks(day) { return entriesBetween(day, addDays(day, 1)).length > 0; }
+  // Consecutive drink-free days ending yesterday. Only meaningful once something has ever been logged.
+  function drinkFreeStreak() {
+    const first = state.entries.length ? startOfDay(effectiveDate(Math.min(...state.entries.map(e => e.ts)))) : null;
+    if (!first) return 0;
+    let n = 0; let d = addDays(todayEff(), -1);
+    while (d >= first && !hasDrinks(d)) { n++; d = addDays(d, -1); }
+    return n;
+  }
+  function drinkFreeDaysThisWeek() {
+    const today = todayEff(); const ws = startOfWeek(today); let n = 0;
+    for (let d = ws; d < today; d = addDays(d, 1)) if (!hasDrinks(d)) n++;
+    return n;
+  }
   function sumUnits(list) { return list.reduce((a, e) => a + e.units, 0); }
   function byType(list) {
     const out = {}; TYPE_ORDER.forEach(t => out[t] = 0);
@@ -214,6 +228,7 @@
           h('div', { class: 'meter-foot' },
             h('span', null, `Week from ${fmtDM.format(weekStart)}`),
             target > 0 ? h('span', null, frac >= 1 ? `${fmtUnits(weekUnits - target)} over` : `${fmtUnits(remaining)} left`) : null))),
+      drinkFreeCard(todayEntries.length === 0),
       h('section', { class: 'stack' },
         h('div', { class: 'row between' }, h('h2', null, 'Quick add'), h('button', { class: 'btn sm ghost', type: 'button', onclick: openAddSheet }, 'Other time…')),
         h('div', { class: 'quick-grid' },
@@ -229,6 +244,32 @@
       todayEntries.length ? h('section', { class: 'stack' },
         h('h2', null, 'Logged today'),
         h('div', { class: 'list' }, todayEntries.map(entryRow))) : null);
+  }
+
+  function drinkFreeCard(todayClean) {
+    if (!state.entries.length) return null;
+    const streak = drinkFreeStreak();
+    const week = drinkFreeDaysThisWeek();
+    const today = todayEff();
+    const daysSoFar = Math.round((today - startOfWeek(today)) / DAY_MS); // completed days this week
+    let icon = '🌱', title, body;
+    if (streak >= 30) { icon = '🏆'; title = `${streak} days drink-free!`; body = 'A whole month without a drink. Outstanding.'; }
+    else if (streak >= 14) { icon = '🏅'; title = `${streak} days drink-free!`; body = 'Two weeks and counting. Brilliant going.'; }
+    else if (streak >= 7) { icon = '🎉'; title = `${streak} days drink-free!`; body = 'A full week without a drink. Congratulations.'; }
+    else if (streak >= 3) { icon = '⭐'; title = `${streak} days drink-free`; body = 'That is a proper run. Keep it going.'; }
+    else if (streak === 2) { icon = '👏'; title = 'Two drink-free days in a row'; body = 'Nice one. One more makes it three.'; }
+    else if (streak === 1) { icon = '👍'; title = 'Yesterday was drink-free'; body = 'Well done. Another today would make two in a row.'; }
+    else if (todayClean) { title = 'Nothing logged today'; body = 'Stay off it tonight and tomorrow will mark your first drink-free day.'; }
+    else { title = 'Drink-free days'; body = 'Aim for several each week. They are counted automatically from what you log.'; }
+    if (streak > 0 && todayClean) body += ' Today is clear so far.';
+    return h('section', { class: 'card df-card' + (streak >= 3 ? ' celebrate' : ''), 'aria-label': 'Drink-free days' },
+      h('div', { class: 'df-icon', 'aria-hidden': 'true' }, icon),
+      h('div', { class: 'grow' },
+        h('div', { class: 'df-title' }, title),
+        h('div', { class: 'df-body' }, body)),
+      h('div', { class: 'df-week' },
+        h('div', { class: 'df-week-n' }, week, h('small', null, `/${daysSoFar}`)),
+        h('div', { class: 'df-week-l' }, 'this week')));
   }
 
   function quickAdd(p) {
@@ -284,12 +325,21 @@
 
   function entryRow(e) {
     const d = new Date(e.ts);
-    return h('button', { class: 'entry', type: 'button', style: `--series: var(--s-${e.type})`, onclick: () => openEditSheet(e) },
-      h('span', { class: 'e-swatch', 'aria-hidden': 'true' }),
-      h('span', { class: 'grow' },
-        h('div', { class: 'e-name' }, TYPES[e.type].icon + ' ' + e.name),
-        h('div', { class: 'e-meta' }, fmtTime.format(d), e.size ? ' · ' + e.size : '', ' · ', TYPES[e.type].label)),
-      h('span', { class: 'e-units' }, fmtUnits(e.units), ' u'));
+    return h('div', { class: 'entry', style: `--series: var(--s-${e.type})` },
+      h('button', { class: 'e-main', type: 'button', 'aria-label': `Edit ${e.name}, ${fmtUnits(e.units)} units at ${fmtTime.format(d)}`, onclick: () => openEditSheet(e) },
+        h('span', { class: 'e-swatch', 'aria-hidden': 'true' }),
+        h('span', { class: 'grow' },
+          h('div', { class: 'e-name' }, TYPES[e.type].icon + ' ' + e.name),
+          h('div', { class: 'e-meta' }, fmtTime.format(d), e.size ? ' · ' + e.size : '', ' · ', TYPES[e.type].label)),
+        h('span', { class: 'e-units' }, fmtUnits(e.units), ' u')),
+      h('button', { class: 'e-delete', type: 'button', 'aria-label': `Remove ${e.name}`, onclick: () => deleteEntryWithUndo(e) },
+        h('span', { class: 'e-delete-icon', 'aria-hidden': 'true', html: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" fill="none"/></svg>' })));
+  }
+
+  function deleteEntryWithUndo(e) {
+    const snapshot = { ...e };
+    removeEntry(e.id); closeSheet(); render();
+    toast(`Removed ${e.name} · ${fmtUnits(e.units)} units`, { label: 'Undo', fn: () => { state.entries.push(snapshot); state.entries.sort((a, b) => b.ts - a.ts); save(); render(); } });
   }
 
   function openEditSheet(e) {
@@ -307,10 +357,7 @@
         h('div', { class: 'field' }, h('label', null, 'Units'), unitsIn),
         h('div', { class: 'field' }, h('label', null, 'When'), whenIn)));
     const footer = h('div', { class: 'btn-row' },
-      h('button', { class: 'btn danger', type: 'button', onclick: () => {
-        const snapshot = { ...e }; removeEntry(e.id); closeSheet(); render();
-        toast('Drink deleted', { label: 'Undo', fn: () => { state.entries.push(snapshot); state.entries.sort((a, b) => b.ts - a.ts); save(); render(); } });
-      } }, 'Delete'),
+      h('button', { class: 'btn danger', type: 'button', onclick: () => deleteEntryWithUndo(e) }, 'Remove'),
       h('button', { class: 'btn primary', type: 'button', onclick: () => {
         const ts = fromLocalInput(whenIn.value); if (ts == null) { toast('Please choose a valid date and time.'); return; }
         const units = num(unitsIn.value, NaN); if (!(units >= 0)) { toast('Please enter the units.'); return; }
@@ -337,10 +384,18 @@
       return out;
     }
     const list = h('div', { class: 'list' });
+    const marker = (n) => h('div', { class: 'df-marker' }, h('span', { 'aria-hidden': 'true' }, '✓'), ` ${n} drink-free day${n === 1 ? '' : 's'}`);
+    let prev = todayEff(); // the day after the group being rendered
+    const yesterday = addDays(prev, -1);
     for (const [k, list_] of groups) {
-      const d = new Date(k + 'T12:00:00');
-      list.appendChild(h('div', { class: 'list-head' }, h('span', null, dayLabel(startOfDay(d))), h('span', { class: 'total' }, fmtUnits(sumUnits(list_)), ' units')));
+      const d = startOfDay(new Date(k + 'T12:00:00'));
+      // gap between this group and the previous (later) one; for the first group, count back from yesterday
+      const gapEnd = prev.getTime() === todayEff().getTime() ? yesterday : addDays(prev, -1);
+      const gap = Math.round((gapEnd - d) / DAY_MS);
+      if (gap > 0 && d < yesterday) list.appendChild(marker(gap));
+      list.appendChild(h('div', { class: 'list-head' }, h('span', null, dayLabel(d)), h('span', { class: 'total' }, fmtUnits(sumUnits(list_)), ' units')));
       list_.forEach(e => list.appendChild(entryRow(e)));
+      prev = d;
     }
     out.appendChild(list);
     return out;

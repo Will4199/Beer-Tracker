@@ -1,5 +1,5 @@
 /* Offline cache for the app shell. Bump CACHE when files change. */
-const CACHE = 'units-v1';
+const CACHE = 'units-v2';
 const SHELL = [
   './', './index.html', './styles.css', './app.js', './manifest.webmanifest',
   './icons/icon.svg', './icons/icon-192.png', './icons/icon-512.png', './icons/icon-512-maskable.png', './icons/apple-touch-icon.png'
